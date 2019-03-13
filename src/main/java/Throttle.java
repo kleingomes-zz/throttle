@@ -1,62 +1,68 @@
 import java.io.Serializable;
 import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.LinkedBlockingQueue;
-import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.LongAdder;
 
 public class Throttle implements Serializable  {
 
     private LinkedBlockingQueue<Runnable> linkedBlockingQueue;
-    private AtomicInteger requestCount;
-    public List<Long> timeSet = new ArrayList<>();
-    private Timer timer = new Timer();
-    private int requestsPerSecond;
+    private ConcurrentHashMap<Long, LongAdder> eventTrackerMap;
+    private Timer timer;
+    private int eventsPerSecond;
 
-    public Throttle(int requestsPerSecond) throws Exception {
-        if (requestsPerSecond <= 0) {
-            throw new Exception("request per second must be greater than 0");
+    public Throttle(int eventsPerSecond) throws Exception {
+        if (eventsPerSecond <= 0) {
+            throw new Exception("events per second must be greater than 0");
         }
-        this.requestsPerSecond = requestsPerSecond;
         this.linkedBlockingQueue = new LinkedBlockingQueue<>();
-        this.requestCount = new AtomicInteger(0);
+        this.eventTrackerMap = new ConcurrentHashMap<>();
+        this.timer = new Timer();
+        this.eventsPerSecond = eventsPerSecond;
     }
 
     public void start() {
-        timer.schedule(queueTask(), new Date(), 1000);
+        timer.schedule(queueEvent(), 0,1000);
     }
 
     public void blockingUntilEmptyStart() throws InterruptedException {
         start();
-        while(true) {
-            if(linkedBlockingQueue.size() == 0) {
-                break;
-            } else {
-                Thread.sleep(500);
-            }
+        while (linkedBlockingQueue.size() > 0) {
+            Thread.sleep(500);
         }
+        stop();
     }
 
     public void stop() {
         timer.cancel();
+        linkedBlockingQueue.clear();
+    }
+
+    public int getQueueSize() {
+        return linkedBlockingQueue.size();
+    }
+
+    public void enqueue(List<Runnable> runnableList) {
+        runnableList.forEach(this::enqueue);
     }
 
     public void enqueue(Runnable runnable) {
         linkedBlockingQueue.offer(runnable);
     }
 
-    private TimerTask queueTask() {
+    private TimerTask queueEvent() {
         return new TimerTask() {
             @Override
             public void run() {
-                requestCount.set(0);
-                Runnable runnable = null;
-                System.out.println("");
+                eventTrackerMap.clear();
+                Runnable runnable;
                 try {
                     while(true) {
-                        int requests = requestCount.incrementAndGet();
-                        timeSet.add(System.currentTimeMillis()/1000);
-                        //System.out.println(System.nanoTime()/1000000000 + " " + requests);
-                        if (requests <= requestsPerSecond) {
+                        long time = System.nanoTime() / 1000000000;
+                        LongAdder longAdder = eventTrackerMap.computeIfAbsent(time, l -> new LongAdder());
+                         if (longAdder.longValue() < eventsPerSecond) {
                             runnable = linkedBlockingQueue.take();
+                            longAdder.increment();
                             runnable.run();
                         } else {
                             break;
