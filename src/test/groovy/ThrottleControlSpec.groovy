@@ -2,21 +2,18 @@ import org.apache.commons.math3.util.Precision
 import spock.lang.Specification
 import spock.lang.Unroll
 
-import java.util.concurrent.ConcurrentHashMap
-import java.util.concurrent.atomic.LongAdder
 import java.util.stream.Collectors
 import java.util.stream.IntStream
 
+class ThrottleControlSpec extends Specification {
 
-class ThrottleSpec extends Specification {
-
-    Throttle throttle
+    ThrottleControl throttle
 
     @Unroll
     void 'it should send #totalEvents events at a rate of #eps events per second and complete in #expectedTotalTime seconds'() {
         given:
         List<Long> countList = []
-        throttle = new Throttle(eps)
+        throttle = new ThrottleControl(eps)
         IntStream.range(0, totalEvents).forEach({
             throttle.enqueue({
                 countList.add(System.nanoTime()/1000000000 as Long)
@@ -25,7 +22,7 @@ class ThrottleSpec extends Specification {
 
         when:
         long startTime = System.currentTimeMillis()
-        throttle.blockingUntilEmptyStart()
+        throttle.start()
         long endTime = System.currentTimeMillis()
         long elapsedTime = endTime - startTime
         int upperLimit = (int) Precision.round(expectedTotalTime*1000, -3)
@@ -49,7 +46,7 @@ class ThrottleSpec extends Specification {
 
     void 'it should throw exception on 0 eps'() {
         when:
-        throttle = new Throttle(0)
+        throttle = new ThrottleControl(0)
 
         then:
         thrown(Exception)
